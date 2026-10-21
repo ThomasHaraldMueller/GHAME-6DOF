@@ -1,0 +1,18 @@
+# Simulink build and cache
+slprj/
+*.slxc
+*.slx.r20*
+codegen/
+*.mex*
+
+# MATLAB temporary files
+*.asv
+*.autosave
+*.m~
+
+# Trim cache, regenerated automatically
+last_trim_state.mat
+last_trim_conditions.mat
+
+# Simulation results
+*.sldd.bak

@@ -1,0 +1,10 @@
+# Text files: stored with LF in the repository, converted on checkout
+* text=auto
+
+# MATLAB and Simulink binary files, never converted
+*.slx  binary
+*.mat  binary
+*.mdl  text
+*.fig  binary
+*.mlx  binary
+*.p    binary
