@@ -30,9 +30,6 @@ function [Sim, IC, MC] = Initialize_Simulation_Public(F)
 Sim.sample_time             = 0.01;                     % Integration time step [s]
 Sim.simulation.duration     = 90;                       % Simulation duration
 
-% ---------------- Engine model ----------------
-Sim.engine.tau              = 0.01;         % Engine time constant [s]
-
 % ---------------- Model toggles ----------------
 Sim.mode.mEarth             = 1;            % 0: spherical Earth, 1: oblate Earth
 Sim.mode.mwind              = 0;            % Enable wind model
