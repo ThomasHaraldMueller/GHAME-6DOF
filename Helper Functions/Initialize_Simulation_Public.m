@@ -91,7 +91,7 @@ star_seed                   = 1;            % Seed for the star tracker errors o
 
 % ---------------- Launch location ----------------
 Sim.launch.lonx             = 0;            % Geodetic longitude [deg]
-Sim.launch.latx             = 0;            % Geodetic latitude  [deg]
+Sim.launch.latx             = 15;            % Geodetic latitude  [deg]
 
 % ---------------- Initial flight condition ----------------
 Sim.initial.velocity.dvbe   = 1000;         % Initial airspeed [m/s]

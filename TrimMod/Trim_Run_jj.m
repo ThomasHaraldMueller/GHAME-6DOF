@@ -3,23 +3,25 @@ function [Sim, IC] = Trim_Run_jj(doPrint, forceTrim, Sim, IC)
 %
 %   [Sim, IC] = Trim_Run_jj(doPrint, forceTrim, Sim, IC)
 %
-%   Trims the Simulink model 'GHAME_Trim' for wings-level flight at the
-%   initial speed and altitude. Free variables are angle of attack, pitch
-%   angle, elevator and throttle, set so that alpha_dot, q_dot, the vertical
-%   acceleration and V_dot vanish. The trim model integrates position and
-%   velocity relative to the rotating Earth in Earth-fixed axes, which
-%   coincide with the inertial axes at t = 0.
+%   Trims the Simulink model 'GHAME_Trim' for wings-level, level flight at
+%   the initial speed and altitude. Free variables are angle of attack,
+%   pitch angle, elevator and throttle, set so that alpha_dot, q_dot and
+%   V_dot vanish and the flight path angle equals Sim.initial.gamma_deg
+%   (0 for level flight if the field is missing). The trim model integrates
+%   position and velocity relative to the rotating Earth in Earth-fixed
+%   axes, which coincide with the inertial axes at t = 0.
 %
-%   The vertical acceleration is taken as the inertial axis closest to the
-%   local vertical. This is exact when the launch point lies on an inertial
-%   axis, e.g. at 0 deg latitude and longitude, and an approximation
-%   otherwise.
+%   The flight path angle is taken from the root outport 'thetavd' of the
+%   trim model (theta - alpha, exact for wings-level flight without
+%   sideslip). It is defined in local-level axes, so the trim works at any
+%   latitude and longitude.
 %
 %   The trim is only recomputed when one of the trim-defining conditions or
 %   the saved trim model has changed since the last run (or when forceTrim
 %   is true). Otherwise the cached results are loaded. Changes to the aero
-%   or engine data are not detected and need forceTrim = true. Call Reinitialize_Simulation afterwards to
-%   rebuild the initial conditions from the trim results.
+%   or engine data are not detected and need forceTrim = true. Call
+%   Reinitialize_Simulation afterwards to rebuild the initial conditions
+%   from the trim results.
 %
 %   Inputs
 %     doPrint    [1x1]  Console output on (default true)
@@ -53,9 +55,17 @@ trimFileCond  = 'last_trim_conditions.mat';
 current.alt      = Sim.initial.altitude.alt;
 current.dvbe     = Sim.initial.velocity.dvbe;
 current.fuelFrac = Sim.vehicle.fuel.fraction;
-current.mEarth   = Sim.mode.mEarth;          % Gravity model
-current.latx     = Sim.launch.latx;          % Gravity and Coriolis vary with latitude
+current.mEarth   = Sim.mode.mEarth;              % Gravity model
+current.latx     = Sim.launch.latx;              % Gravity and Coriolis vary with latitude
 current.psibdx   = Sim.initial.attitude.psibdx;  % Vertical Coriolis term depends on heading
+
+% Commanded flight path angle, level flight by default
+if isfield(Sim.initial, 'gamma_deg')
+    gamma_trim = Sim.initial.gamma_deg * RAD;
+else
+    gamma_trim = 0;
+end
+current.gamma = gamma_trim;
 
 % Any saved change to the trim model also invalidates the cache
 modelFile         = dir(which(model));
@@ -103,9 +113,6 @@ idx_vab = find_states(stateNames, 'V_alpha_beta',           3);
 idx_eul = find_states(stateNames, 'Euler Angles',           3);
 
 idx_q     = idx_rot(2);
-% Velocity component closest to the local vertical (down row of TDI)
-[~, i_rad] = max(abs(IC.TDI(3, :)));
-idx_vrad   = idx_vel(i_rad);
 idx_V     = idx_vab(1);
 idx_alpha = idx_vab(2);
 idx_theta = idx_eul(2);
@@ -129,21 +136,35 @@ nu = numel(u0);
 %% Trim problem
 d0 = zeros(nx, 1);              % Desired derivatives, steady flight
 
-ny      = 1;                    % Outputs not used, required by jj_trim
-y0      = zeros(ny, 1);
-iy_trim = [];
+% Root outports of the trim model, ordered by port number
+outBlk = find_system(model, 'SearchDepth', 1, 'BlockType', 'Outport');
+outNum = str2double(get_param(outBlk, 'Port'));
+y_nam  = cell(numel(outBlk), 1);
+y_nam(outNum) = get_param(outBlk, 'Name');
+
+ny       = numel(y_nam);
+iy_gamma = find(strcmp(y_nam, 'thetavd'));
+if numel(iy_gamma) ~= 1
+    error('Trim_Run_jj:outputs', ...
+          'The trim model needs exactly one root outport named ''thetavd''.');
+end
+
+y0           = zeros(ny, 1);
+y0(iy_gamma) = gamma_trim;      % Flight path angle
+iy_trim      = iy_gamma;
 
 ix = [idx_alpha; idx_theta];    % Free states
 iu = [2; 4];                    % Free inputs, elevator and throttle
 id = [idx_alpha;                % alpha_dot = 0
       idx_q;                    % q_dot     = 0
-      idx_vrad;                 % Vertical acceleration = 0
       idx_V];                   % V_dot     = 0
 
-if numel(ix) + numel(iu) ~= numel(id)
+nFree = numel(ix) + numel(iu);
+nCond = numel(id) + numel(iy_trim);
+if nFree ~= nCond
     error('Trim_Run_jj:illPosed', ...
           'Trim problem ill-posed, %d free variables for %d conditions.', ...
-          numel(ix) + numel(iu), numel(id));
+          nFree, nCond);
 end
 
 %% Names for diagnostics
@@ -177,7 +198,7 @@ end
     model, ...
     x0, u0, d0, y0, ...
     ix, iu, id, iy_trim, ...
-    x_nam, u_nam, d_nam, {}, ...
+    x_nam, u_nam, d_nam, y_nam, ...
     [], [], [], [], ...
     options, ...
     x_min, x_max, u_min, u_max);
@@ -199,6 +220,7 @@ if doPrint
     fprintf('\nTrim successful\n');
     fprintf('  alpha    : %7.3f deg\n', IC.alpha_trim / RAD);
     fprintf('  theta    : %7.3f deg\n', IC.thtbd_trim / RAD);
+    fprintf('  gamma    : %7.3f deg\n', (IC.thtbd_trim - IC.alpha_trim) / RAD);
     fprintf('  elevator : %7.3f deg\n', IC.dq_trim    / RAD);
     fprintf('  throttle : %7.3f\n\n',   IC.dT_trim);
 end
